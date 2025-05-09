@@ -16,13 +16,11 @@
  *
  */
 
-package terragruntretriever
+package terramateretriever
 
 import (
 	"context"
 	"net/url"
-	"os"
-	"path/filepath"
 	"runtime"
 	"strings"
 
@@ -32,56 +30,60 @@ import (
 	"github.com/tofuutils/tenv/v4/config/cmdconst"
 	"github.com/tofuutils/tenv/v4/config/envname"
 	"github.com/tofuutils/tenv/v4/pkg/apimsg"
+	"github.com/tofuutils/tenv/v4/pkg/archname"
 	sha256check "github.com/tofuutils/tenv/v4/pkg/check/sha256"
 	"github.com/tofuutils/tenv/v4/pkg/download"
 	"github.com/tofuutils/tenv/v4/pkg/github"
+	"github.com/tofuutils/tenv/v4/pkg/pathfilter"
+	"github.com/tofuutils/tenv/v4/pkg/uncompress"
 	"github.com/tofuutils/tenv/v4/pkg/winbin"
 	htmlretriever "github.com/tofuutils/tenv/v4/versionmanager/retriever/html"
 )
 
 const (
-	baseFileName  = "terragrunt_"
-	gruntworkName = "gruntwork-io"
-
-	rwePerm = 0o755
+	baseFileName    = "terramate_"
+	terramateIoName = "terramate-io"
 )
 
-type TerragruntRetriever struct {
+type TerramateRetriever struct {
 	conf *config.Config
 }
 
-func Make(conf *config.Config) TerragruntRetriever {
-	return TerragruntRetriever{conf: conf}
+func Make(conf *config.Config) TerramateRetriever {
+	return TerramateRetriever{conf: conf}
 }
 
-func (r TerragruntRetriever) Install(ctx context.Context, versionStr string, targetPath string) error {
+func (r TerramateRetriever) Install(ctx context.Context, versionStr string, targetPath string) error {
 	err := r.conf.InitRemoteConf()
 	if err != nil {
 		return err
 	}
 
 	tag := versionStr
-	// assume that terragrunt tags start with a 'v', except for alpha versions
-	if tag[0] != 'v' && !strings.HasPrefix(tag, "alpha") {
+	// assume that terramate tags start with a 'v'
+	// and version in asset name does not
+	if tag[0] == 'v' {
+		versionStr = versionStr[1:]
+	} else {
 		tag = "v" + versionStr
 	}
 
 	var assetURLs []string
-	fileName, shaFileName := buildAssetNames(r.conf.Arch)
+	fileName, shaFileName := buildAssetNames(versionStr, r.conf.Arch)
 	if r.conf.Displayer.IsDebug() {
 		r.conf.Displayer.Log(hclog.Debug, apimsg.MsgSearch, apimsg.AssetsName, []string{fileName, shaFileName})
 	}
 
-	switch r.conf.Tg.GetInstallMode() {
+	switch r.conf.Tm.GetInstallMode() {
 	case config.InstallModeDirect:
-		baseAssetURL, err2 := url.JoinPath(r.conf.Tg.GetRemoteURL(), gruntworkName, cmdconst.TerragruntName, github.Releases, github.Download, tag)
+		baseAssetURL, err2 := url.JoinPath(r.conf.Tm.GetRemoteURL(), terramateIoName, cmdconst.TerramateName, github.Releases, github.Download, tag)
 		if err2 != nil {
 			return err2
 		}
 
 		assetURLs, err = htmlretriever.BuildAssetURLs(baseAssetURL, fileName, shaFileName)
 	case config.ModeAPI:
-		assetURLs, err = github.AssetDownloadURL(ctx, tag, []string{fileName, shaFileName}, r.conf.Tg.GetRemoteURL(), r.conf.GithubToken, r.conf.Displayer.Display)
+		assetURLs, err = github.AssetDownloadURL(ctx, tag, []string{fileName, shaFileName}, r.conf.Tm.GetRemoteURL(), r.conf.GithubToken, r.conf.Displayer.Display)
 	default:
 		return config.ErrInstallMode
 	}
@@ -89,12 +91,12 @@ func (r TerragruntRetriever) Install(ctx context.Context, versionStr string, tar
 		return err
 	}
 
-	assetURLs, err = download.ApplyURLTransformer(r.conf.Tg.GetRewriteRule(), assetURLs...)
+	assetURLs, err = download.ApplyURLTransformer(r.conf.Tm.GetRewriteRule(), assetURLs...)
 	if err != nil {
 		return err
 	}
 
-	requestOptions := config.GetBasicAuthOption(r.conf.Getenv, envname.TgRemoteUser, envname.TgRemotePass)
+	requestOptions := config.GetBasicAuthOption(r.conf.Getenv, envname.TmRemoteUser, envname.TmRemotePass)
 	data, err := download.Bytes(ctx, assetURLs[0], r.conf.Displayer.Display, download.NoCheck, requestOptions...)
 	if err != nil {
 		return err
@@ -109,33 +111,28 @@ func (r TerragruntRetriever) Install(ctx context.Context, versionStr string, tar
 		return err
 	}
 
-	err = os.MkdirAll(targetPath, rwePerm)
-	if err != nil {
-		return err
-	}
-
-	return os.WriteFile(filepath.Join(targetPath, winbin.GetBinaryName(cmdconst.TerragruntName)), data, rwePerm)
+	return uncompress.ToDir(data, fileName, targetPath, pathfilter.NameEqual(winbin.GetBinaryName(cmdconst.TerramateName)))
 }
 
-func (r TerragruntRetriever) ListVersions(ctx context.Context) ([]string, error) {
+func (r TerramateRetriever) ListVersions(ctx context.Context) ([]string, error) {
 	err := r.conf.InitRemoteConf()
 	if err != nil {
 		return nil, err
 	}
 
-	requestOptions := config.GetBasicAuthOption(r.conf.Getenv, envname.TgRemoteUser, envname.TgRemotePass)
+	requestOptions := config.GetBasicAuthOption(r.conf.Getenv, envname.TmRemoteUser, envname.TmRemotePass)
 
-	listURL := r.conf.Tg.GetListURL()
-	switch r.conf.Tg.GetListMode() {
+	listURL := r.conf.Tm.GetListURL()
+	switch r.conf.Tm.GetListMode() {
 	case config.ListModeHTML:
-		baseURL, err := url.JoinPath(listURL, gruntworkName, cmdconst.TerragruntName, github.Releases, github.Download)
+		baseURL, err := url.JoinPath(listURL, terramateIoName, cmdconst.TerramateName, github.Releases, github.Download)
 		if err != nil {
 			return nil, err
 		}
 
 		r.conf.Displayer.Display(apimsg.MsgFetchAllReleases + baseURL)
 
-		return htmlretriever.ListReleases(ctx, baseURL, r.conf.Tg.Data, requestOptions)
+		return htmlretriever.ListReleases(ctx, baseURL, r.conf.Tm.Data, requestOptions)
 	case config.ModeAPI:
 		r.conf.Displayer.Display(apimsg.MsgFetchAllReleases + listURL)
 
@@ -145,13 +142,15 @@ func (r TerragruntRetriever) ListVersions(ctx context.Context) ([]string, error)
 	}
 }
 
-func buildAssetNames(arch string) (string, string) {
+func buildAssetNames(version string, arch string) (string, string) {
 	var nameBuilder strings.Builder
 	nameBuilder.WriteString(baseFileName)
+	nameBuilder.WriteString(version)
+	nameBuilder.WriteByte('_')
 	nameBuilder.WriteString(runtime.GOOS)
 	nameBuilder.WriteByte('_')
-	nameBuilder.WriteString(arch)
-	_, _ = winbin.WriteSuffixTo(&nameBuilder)
+	nameBuilder.WriteString(archname.Convert(arch))
+	nameBuilder.WriteString(winbin.GetArchiveFormat())
 
-	return nameBuilder.String(), "SHA256SUMS"
+	return nameBuilder.String(), "checksums.txt"
 }

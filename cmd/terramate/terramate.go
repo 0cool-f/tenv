@@ -16,22 +16,13 @@
  *
  */
 
-package versionfinder
+package main
 
 import (
-	"regexp"
+	"github.com/tofuutils/tenv/v4/config/cmdconst"
+	lightproxy "github.com/tofuutils/tenv/v4/versionmanager/proxy/light"
 )
 
-const versionRegexpRaw string = `(v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z\-.]+)?|alpha\-?[0-9]+)`
-
-var versionRegexp = regexp.MustCompilePOSIX(versionRegexpRaw) //nolint
-
-// return a version without starting 'v'.
-func Find(versionStr string) string {
-	versionStr = versionRegexp.FindString(versionStr)
-	if versionStr != "" && versionStr[0] == 'v' {
-		versionStr = versionStr[1:]
-	}
-
-	return versionStr
+func main() {
+	lightproxy.Exec(cmdconst.TerramateName)
 }
