@@ -16,22 +16,18 @@
  *
  */
 
-package versionfinder
+package archname
 
-import (
-	"regexp"
-)
+var conversion = map[string]string{ //nolint
+	"amd64": "x86_64",
+	"386":   "i386",
+}
 
-const versionRegexpRaw string = `(v?[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z\-.]+)?|alpha\-?[0-9]+)`
-
-var versionRegexp = regexp.MustCompilePOSIX(versionRegexpRaw) //nolint
-
-// return a version without starting 'v'.
-func Find(versionStr string) string {
-	versionStr = versionRegexp.FindString(versionStr)
-	if versionStr != "" && versionStr[0] == 'v' {
-		versionStr = versionStr[1:]
+func Convert(archName string) string {
+	newValue, ok := conversion[archName]
+	if ok {
+		return newValue
 	}
 
-	return versionStr
+	return archName
 }
