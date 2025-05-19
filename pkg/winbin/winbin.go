@@ -24,9 +24,19 @@ import (
 )
 
 const (
-	suffix = ".exe"
-	osName = "windows"
+	suffix      = ".exe"
+	osName      = "windows"
+	zipSuffix   = ".zip"
+	tarGzSuffix = ".tar.gz"
 )
+
+func GetArchiveFormat() string {
+	if runtime.GOOS == osName {
+		return zipSuffix
+	}
+
+	return tarGzSuffix
+}
 
 func GetBinaryName(execName string) string {
 	if runtime.GOOS != osName {
