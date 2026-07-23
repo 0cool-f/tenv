@@ -29,10 +29,11 @@ bin/terraform-*
 tenv
 terraform
 terragrunt
+terramate
 tofu
 atmos
 
-./build/**
+build/
 
 # File for changelog process
 release-notes.txt
