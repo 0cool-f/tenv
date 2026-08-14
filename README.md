@@ -1669,6 +1669,15 @@ This would identify the latest version at or above 1.2.0 and below 2.0.0
 
 All the proxy binaries return the exit code `42` on error happening before proxied command call.
 
+<a id="version-resolution"></a>
+Every tool proxy resolves the version to run with the same order:
+
+1. the tool version environment variable (e.g. `TOFUENV_TOFU_VERSION`, `TFENV_TERRAFORM_VERSION`)
+2. the tool version files (names and priority listed per tool below), searched in the working directory, then each of its parent directories up to the filesystem root, then the user home directory; the first directory containing a matching file wins, and inside a directory files are tried in the listed order
+3. the tool default version environment variable (e.g. `TOFUENV_TOFU_DEFAULT_VERSION`)
+4. the `${TENV_ROOT}/<TOOL>/version` default version file (written with `tenv <tool> use`)
+5. the tool fallback strategy (usually `latest-allowed`), or an error when there is none
+
 
 <details markdown="1"><summary><b>tofu</b></summary><br>
 
@@ -1777,20 +1786,30 @@ be written with `tenv atmos constraint`). The default constraint is added while 
 
 <details markdown="1"><summary><b>tf</b></summary><br>
 
-The `tf` command is a proxy to `tofu` or `terraform` depending on the version files present in project.
+The `tf` command is an agnostic proxy: it launches `tofu` or `terraform` depending on the version files present, using **version files only**. Environment variables never influence `tf`: neither the tool choice nor the version to run (`TOFUENV_TOFU_VERSION` and `TFENV_TERRAFORM_VERSION` only affect the `tofu` and `terraform` proxies).
 
-The version resolution order is :
+The tool selection happens in two passes:
 
-- `.opentofu-version` file (launch `tofu`)
-- `tofu` version from `.tool-versions` [file](https://asdf-vm.com/manage/configuration.html#tool-versions)
-- `terraform_version_constraint` from `terragrunt.hcl` file (launch `tofu`)
-- `terraform_version_constraint` from `terragrunt.hcl.json` file (launch `tofu`)
-- `terraform_version_constraint` from `root.hcl` file (launch `tofu`)
-- `terraform_version_constraint` from `root.hcl.json` file (launch `tofu`)
-- `.terraform-version` file (launch `terraform`)
-- `.tfswitchrc` file  (launch `terraform`)
-- `terraform` version from `.tool-versions` [file](https://asdf-vm.com/manage/configuration.html#tool-versions)
-- fail with a message
+1. search the **OpenTofu** version files across the whole [search path](#version-resolution) (working directory, its parents, then the user home directory):
+   - `.opentofu-version` file
+   - `tofu` version from `.tool-versions` [file](https://asdf-vm.com/manage/configuration.html#tool-versions)
+   - `terraform_version_constraint` from `terragrunt.hcl` file
+   - `terraform_version_constraint` from `terragrunt.hcl.json` file
+   - `terraform_version_constraint` from `root.hcl` file
+   - `terraform_version_constraint` from `root.hcl.json` file
+
+   any match launches `tofu` with the matched version.
+2. only when no OpenTofu version file was found anywhere, search the **Terraform** version files the same way:
+   - `.terraform-version` file
+   - `.tfswitchrc` file
+   - `terraform` version from `.tool-versions` [file](https://asdf-vm.com/manage/configuration.html#tool-versions)
+   - `terraform_version_constraint` from `terragrunt.hcl` / `terragrunt.hcl.json` / `root.hcl` / `root.hcl.json` file
+
+   any match launches `terraform` with the matched version.
+
+When neither pass finds a version file, `tf` fails with a message and the exit code `42` (it does not fall back to `latest-allowed` like the tool proxies do).
+
+Because the OpenTofu pass covers the whole search path before Terraform is considered, a `tofu` entry in `~/.tool-versions` takes precedence over a `.terraform-version` file in the working directory. Use the `tofu` or `terraform` proxy directly when you want to force a specific tool.
 
 </details>
 
